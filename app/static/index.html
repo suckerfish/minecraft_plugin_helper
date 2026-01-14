@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Plugin Manager</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #4ade80; margin-bottom: 10px; }
+        h2 { color: #888; font-size: 1rem; margin-top: 30px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: #16213e;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #666;
+        }
+        .status-indicator.running { background: #4ade80; }
+        .status-indicator.exited { background: #f87171; }
+        .status-indicator.loading { background: #fbbf24; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .status-text { flex: 1; }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-start { background: #4ade80; color: #000; }
+        .btn-stop { background: #f87171; color: #000; }
+        .btn-restart { background: #fbbf24; color: #000; }
+        .btn-delete { background: #ef4444; color: #fff; padding: 4px 8px; font-size: 12px; }
+        .btn-small { background: #3b82f6; color: #fff; padding: 6px 12px; font-size: 13px; }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+
+        .breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex: 1;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .breadcrumbs a {
+            color: #4ade80;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .breadcrumbs a:hover { text-decoration: underline; }
+        .breadcrumbs span { color: #666; }
+
+        .upload-area {
+            border: 2px dashed #444;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .upload-area.dragover { border-color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+        .upload-area input[type="file"] { display: none; }
+        .upload-area label {
+            cursor: pointer;
+            color: #4ade80;
+            text-decoration: underline;
+        }
+
+        .file-list {
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid #1a1a2e;
+            cursor: default;
+        }
+        .file-item:last-child { border-bottom: none; }
+        .file-item.folder { cursor: pointer; }
+        .file-item.folder:hover { background: rgba(255,255,255,0.05); }
+
+        .file-icon {
+            width: 24px;
+            margin-right: 12px;
+            text-align: center;
+            font-size: 16px;
+        }
+        .file-name { flex: 1; word-break: break-all; }
+        .file-size { color: #888; font-size: 12px; margin-right: 15px; min-width: 70px; text-align: right; }
+        .file-empty { padding: 30px; text-align: center; color: #666; }
+
+        .message {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .message.success { background: #065f46; display: block; }
+        .message.error { background: #7f1d1d; display: block; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+        }
+        .modal-content h3 { margin-top: 0; color: #4ade80; }
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #eee;
+            margin-bottom: 15px;
+        }
+        .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; }
+        .btn-cancel { background: #666; color: #fff; }
+    </style>
+</head>
+<body>
+    <h1>Minecraft Plugin Manager</h1>
+
+    <div id="message" class="message"></div>
+
+    <h2>Server Status</h2>
+    <div class="status-bar">
+        <div id="status-indicator" class="status-indicator loading"></div>
+        <span id="status-text" class="status-text">Checking...</span>
+        <button id="btn-start" class="btn-start" onclick="startServer()" disabled>Start</button>
+        <button id="btn-stop" class="btn-stop" onclick="stopServer()" disabled>Stop</button>
+        <button id="btn-restart" class="btn-restart" onclick="restartServer()" disabled>Restart</button>
+    </div>
+
+    <h2>File Browser</h2>
+
+    <div class="toolbar">
+        <div class="breadcrumbs" id="breadcrumbs">
+            <a onclick="navigate('')">Root</a>
+        </div>
+        <button class="btn-small" onclick="showNewFolderModal()">New Folder</button>
+    </div>
+
+    <div class="upload-area" id="upload-area">
+        <p>Drag & drop files here, or <label for="file-input">browse</label></p>
+        <input type="file" id="file-input" multiple>
+    </div>
+
+    <div class="file-list" id="file-list">
+        <div class="file-empty">Loading...</div>
+    </div>
+
+    <!-- New Folder Modal -->
+    <div class="modal" id="new-folder-modal">
+        <div class="modal-content">
+            <h3>New Folder</h3>
+            <input type="text" id="new-folder-name" placeholder="Folder name">
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="hideNewFolderModal()">Cancel</button>
+                <button class="btn-small" onclick="createFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPath = '';
+
+        // Utility functions
+        function formatSize(bytes) {
+            if (bytes === null) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = 'message ' + type;
+            setTimeout(() => { msg.className = 'message'; }, 5000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Server status
+        async function refreshStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                const indicator = document.getElementById('status-indicator');
+                const text = document.getElementById('status-text');
+                const btnStart = document.getElementById('btn-start');
+                const btnStop = document.getElementById('btn-stop');
+                const btnRestart = document.getElementById('btn-restart');
+
+                indicator.className = 'status-indicator ' + data.state.toLowerCase();
+                text.textContent = data.container + ': ' + data.state;
+
+                const isRunning = data.state === 'RUNNING';
+                btnStart.disabled = isRunning;
+                btnStop.disabled = !isRunning;
+                btnRestart.disabled = !isRunning;
+            } catch (e) {
+                document.getElementById('status-indicator').className = 'status-indicator';
+                document.getElementById('status-text').textContent = 'Error connecting to server';
+            }
+        }
+
+        async function startServer() {
+            setButtonsLoading(true);
+            try {
+                const res = await fetch('/api/start', { method: 'POST' });
+                const data = await res.json();
+                showMessage(data.message, data.success ? 'success' : 'error');
+            } catch (e) {
+                showMessage('Failed to start server', 'error');
+            }
+            await refreshStatus();
+            setButtonsLoading(false);
+        }
+
+        async function stopServer() {
+            setButtonsLoading(true);
+            try {
+                const res = await fetch('/api/stop', { method: 'POST' });
+                const data = await res.json();
+                showMessage(data.message, data.success ? 'success' : 'error');
+            } catch (e) {
+                showMessage('Failed to stop server', 'error');
+            }
+            await refreshStatus();
+            setButtonsLoading(false);
+        }
+
+        async function restartServer() {
+            setButtonsLoading(true);
+            document.getElementById('status-indicator').className = 'status-indicator loading';
+            document.getElementById('status-text').textContent = 'Restarting...';
+            try {
+                const res = await fetch('/api/restart', { method: 'POST' });
+                const data = await res.json();
+                showMessage(data.message, data.success ? 'success' : 'error');
+            } catch (e) {
+                showMessage('Failed to restart server', 'error');
+            }
+            await refreshStatus();
+            setButtonsLoading(false);
+        }
+
+        function setButtonsLoading(loading) {
+            document.getElementById('btn-start').disabled = loading;
+            document.getElementById('btn-stop').disabled = loading;
+            document.getElementById('btn-restart').disabled = loading;
+        }
+
+        // File browser
+        function navigate(path) {
+            currentPath = path;
+            refreshFiles();
+        }
+
+        async function refreshFiles() {
+            try {
+                const url = '/api/files' + (currentPath ? '?path=' + encodeURIComponent(currentPath) : '');
+                const res = await fetch(url);
+                const data = await res.json();
+
+                // Update breadcrumbs
+                const bc = document.getElementById('breadcrumbs');
+                let bcHtml = '<a onclick="navigate(\'\')">Root</a>';
+                for (const crumb of data.breadcrumbs) {
+                    bcHtml += ` <span>/</span> <a onclick="navigate('${escapeHtml(crumb.path)}')">${escapeHtml(crumb.name)}</a>`;
+                }
+                bc.innerHTML = bcHtml;
+
+                // Update file list
+                const list = document.getElementById('file-list');
+
+                if (data.items.length === 0) {
+                    list.innerHTML = '<div class="file-empty">Empty folder</div>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(item => {
+                    const itemPath = currentPath ? currentPath + '/' + item.name : item.name;
+                    const isFolder = item.type === 'folder';
+                    return `
+                        <div class="file-item ${isFolder ? 'folder' : ''}" ${isFolder ? `onclick="navigate('${escapeHtml(itemPath)}')"` : ''}>
+                            <span class="file-icon">${isFolder ? '&#128193;' : '&#128196;'}</span>
+                            <span class="file-name">${escapeHtml(item.name)}</span>
+                            <span class="file-size">${formatSize(item.size)}</span>
+                            <button class="btn-delete" onclick="event.stopPropagation(); deleteItem('${escapeHtml(itemPath)}', '${item.type}')">Delete</button>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                document.getElementById('file-list').innerHTML =
+                    '<div class="file-empty">Error loading files</div>';
+            }
+        }
+
+        async function uploadFiles(files) {
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const url = '/api/files/upload' + (currentPath ? '?path=' + encodeURIComponent(currentPath) : '');
+
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showMessage(`Uploaded: ${data.filename}`, 'success');
+                    } else {
+                        showMessage(`Failed to upload: ${file.name}`, 'error');
+                    }
+                } catch (e) {
+                    showMessage(`Failed to upload: ${file.name}`, 'error');
+                }
+            }
+            refreshFiles();
+        }
+
+        async function deleteItem(path, type) {
+            const typeLabel = type === 'folder' ? 'folder' : 'file';
+            if (!confirm(`Delete this ${typeLabel}?`)) return;
+
+            try {
+                const res = await fetch(`/api/files?path=${encodeURIComponent(path)}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMessage(`Deleted successfully`, 'success');
+                } else {
+                    showMessage(data.detail || `Failed to delete`, 'error');
+                }
+            } catch (e) {
+                const err = await e.response?.json?.() || {};
+                showMessage(err.detail || `Failed to delete`, 'error');
+            }
+            refreshFiles();
+        }
+
+        // New folder modal
+        function showNewFolderModal() {
+            document.getElementById('new-folder-name').value = '';
+            document.getElementById('new-folder-modal').classList.add('show');
+            document.getElementById('new-folder-name').focus();
+        }
+
+        function hideNewFolderModal() {
+            document.getElementById('new-folder-modal').classList.remove('show');
+        }
+
+        async function createFolder() {
+            const name = document.getElementById('new-folder-name').value.trim();
+            if (!name) {
+                showMessage('Please enter a folder name', 'error');
+                return;
+            }
+
+            const url = `/api/files/mkdir?name=${encodeURIComponent(name)}` +
+                (currentPath ? `&path=${encodeURIComponent(currentPath)}` : '');
+
+            try {
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showMessage(`Created folder: ${name}`, 'success');
+                    hideNewFolderModal();
+                } else {
+                    showMessage(data.detail || 'Failed to create folder', 'error');
+                }
+            } catch (e) {
+                showMessage('Failed to create folder', 'error');
+            }
+            refreshFiles();
+        }
+
+        // Handle Enter key in modal
+        document.getElementById('new-folder-name').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') createFolder();
+            if (e.key === 'Escape') hideNewFolderModal();
+        });
+
+        // File input and drag/drop
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            uploadFiles(e.target.files);
+            e.target.value = '';
+        });
+
+        const uploadArea = document.getElementById('upload-area');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            uploadFiles(e.dataTransfer.files);
+        });
+
+        // Close modal on background click
+        document.getElementById('new-folder-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) hideNewFolderModal();
+        });
+
+        // Initial load
+        refreshStatus();
+        refreshFiles();
+
+        // Auto-refresh status every 30 seconds
+        setInterval(refreshStatus, 30000);
+    </script>
+</body>
+</html>
