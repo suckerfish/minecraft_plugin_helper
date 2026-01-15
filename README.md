@@ -21,10 +21,33 @@ The UI provides:
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.14+
 - [uv](https://github.com/astral-sh/uv) for package management
 - Unraid server with API access enabled
 - itzg/minecraft-server container (or similar)
+
+### Docker Deployment
+
+1. Copy `.env.example` to `.env` and configure:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` with your settings:
+   ```
+   UNRAID_URL=http://192.168.1.200
+   UNRAID_API_KEY=your_api_key_here
+   MINECRAFT_CONTAINER=itzg-minecraft-server
+   PLUGINS_PATH=/mnt/user/appdata/minecraft/plugins
+   PORT=8340
+   ```
+
+3. Build and run:
+   ```bash
+   docker compose up -d
+   ```
+
+4. Open http://localhost:8340
 
 ### Local Development
 
@@ -71,6 +94,9 @@ minecraft_helper/
 │   ├── unraid.py        # Unraid GraphQL API client
 │   └── static/
 │       └── index.html   # Web UI
+├── Dockerfile           # Container image definition
+├── compose.yaml         # Docker Compose configuration
+├── .dockerignore        # Files excluded from build
 ├── .env.example         # Environment template
 ├── .env                 # Your configuration (gitignored)
 ├── pyproject.toml       # Python dependencies
@@ -81,6 +107,7 @@ minecraft_helper/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/health` | GET | Health check for container orchestration |
 | `/api/status` | GET | Get Minecraft container status |
 | `/api/start` | POST | Start the container |
 | `/api/stop` | POST | Stop the container |
@@ -92,7 +119,7 @@ minecraft_helper/
 
 ## TODO
 
-- [ ] Docker packaging (Dockerfile + docker-compose.yml)
+- [x] Docker packaging (Dockerfile + compose.yaml)
 - [ ] Unraid Community Applications template
 - [ ] File download functionality
 - [ ] Bulk delete / multi-select

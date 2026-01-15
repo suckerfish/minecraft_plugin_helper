@@ -1,0 +1,23 @@
+services:
+  minecraft-helper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: minecraft-helper:latest
+    pull_policy: build
+    container_name: minecraft-helper
+    env_file:
+      - .env
+    environment:
+      # Override PLUGINS_PATH to container mount point
+      - PLUGINS_PATH=/app/plugins
+    ports:
+      - "${PORT:-8340}:8080"
+    volumes:
+      - ${PLUGINS_PATH:-./plugins}:/app/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

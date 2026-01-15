@@ -29,6 +29,12 @@ unraid = UnraidClient(UNRAID_URL, UNRAID_API_KEY)
 # --- API Endpoints ---
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration."""
+    return {"status": "healthy"}
+
+
 @app.get("/api/status")
 async def get_status():
     """Get Minecraft server container status."""
