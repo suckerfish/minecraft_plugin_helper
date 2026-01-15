@@ -42,7 +42,7 @@ The UI provides:
    PORT=8340
    ```
 
-3. Build and run:
+3. Run (pulls image from ghcr.io):
    ```bash
    docker compose up -d
    ```
@@ -89,6 +89,9 @@ The UI provides:
 
 ```
 minecraft_helper/
+├── .github/
+│   └── workflows/
+│       └── docker.yml   # CI/CD: builds and pushes to ghcr.io
 ├── app/
 │   ├── main.py          # FastAPI application
 │   ├── unraid.py        # Unraid GraphQL API client
@@ -120,6 +123,7 @@ minecraft_helper/
 ## TODO
 
 - [x] Docker packaging (Dockerfile + compose.yaml)
+- [x] CI/CD pipeline (GitHub Actions → ghcr.io)
 - [ ] Unraid Community Applications template
 - [ ] File download functionality
 - [ ] Bulk delete / multi-select
