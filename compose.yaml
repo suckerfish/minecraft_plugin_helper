@@ -1,10 +1,6 @@
 services:
   minecraft-helper:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: minecraft-helper:latest
-    pull_policy: build
+    image: ghcr.io/suckerfish/minecraft_plugin_helper:main
     container_name: minecraft-helper
     env_file:
       - .env
