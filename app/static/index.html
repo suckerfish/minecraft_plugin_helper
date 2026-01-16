@@ -160,6 +160,41 @@
         }
         .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; }
         .btn-cancel { background: #666; color: #fff; }
+        .btn-edit { background: #3b82f6; color: #fff; padding: 4px 8px; font-size: 12px; margin-right: 5px; }
+
+        /* Delete confirmation modal */
+        .delete-warning { color: #f87171; margin-bottom: 15px; font-size: 14px; }
+        .delete-item-count { color: #fbbf24; font-weight: bold; }
+        .confirm-input-label { font-size: 13px; color: #888; margin-bottom: 5px; }
+        .btn-delete-confirm { background: #ef4444; color: #fff; }
+        .btn-delete-confirm:disabled { background: #666; }
+
+        /* Editor modal */
+        .editor-modal-content {
+            width: 80vw;
+            max-width: 900px;
+            height: 70vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .editor-modal-content h3 {
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+        #editor-content {
+            flex: 1;
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #eee;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            resize: none;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -206,6 +241,34 @@
         </div>
     </div>
 
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="delete-confirm-modal">
+        <div class="modal-content">
+            <h3>Delete Folder</h3>
+            <p class="delete-warning">
+                This will permanently delete <strong id="delete-folder-name"></strong> and all <span class="delete-item-count" id="delete-item-count"></span> items inside it.
+            </p>
+            <p class="confirm-input-label">Type the folder name to confirm:</p>
+            <input type="text" id="delete-confirm-input" placeholder="Folder name">
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="hideDeleteConfirmModal()">Cancel</button>
+                <button class="btn-delete-confirm" id="btn-delete-confirm" onclick="confirmRecursiveDelete()" disabled>Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Editor Modal -->
+    <div class="modal" id="editor-modal">
+        <div class="modal-content editor-modal-content">
+            <h3 id="editor-filename">Edit File</h3>
+            <textarea id="editor-content" spellcheck="false"></textarea>
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="hideEditorModal()">Cancel</button>
+                <button class="btn-small" onclick="saveFile()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentPath = '';
 
@@ -228,6 +291,16 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // Editable file extensions
+        const EDITABLE_EXTENSIONS = ['.yml', '.yaml', '.json', '.properties', '.txt', '.cfg', '.conf', '.toml'];
+
+        function isEditable(filename) {
+            const ext = filename.lastIndexOf('.') !== -1
+                ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+                : '';
+            return EDITABLE_EXTENSIONS.includes(ext);
         }
 
         // Server status
@@ -333,11 +406,13 @@
                 list.innerHTML = data.items.map(item => {
                     const itemPath = currentPath ? currentPath + '/' + item.name : item.name;
                     const isFolder = item.type === 'folder';
+                    const canEdit = !isFolder && isEditable(item.name);
                     return `
                         <div class="file-item ${isFolder ? 'folder' : ''}" ${isFolder ? `onclick="navigate('${escapeHtml(itemPath)}')"` : ''}>
                             <span class="file-icon">${isFolder ? '&#128193;' : '&#128196;'}</span>
                             <span class="file-name">${escapeHtml(item.name)}</span>
                             <span class="file-size">${formatSize(item.size)}</span>
+                            ${canEdit ? `<button class="btn-edit" onclick="event.stopPropagation(); editFile('${escapeHtml(itemPath)}')">Edit</button>` : ''}
                             <button class="btn-delete" onclick="event.stopPropagation(); deleteItem('${escapeHtml(itemPath)}', '${item.type}')">Delete</button>
                         </div>
                     `;
@@ -373,26 +448,154 @@
             refreshFiles();
         }
 
+        // Delete state for recursive deletion
+        let pendingDeletePath = null;
+        let pendingDeleteName = null;
+
         async function deleteItem(path, type) {
+            if (type === 'folder') {
+                // Check if folder is empty
+                try {
+                    const res = await fetch(`/api/files/info?path=${encodeURIComponent(path)}`);
+                    const info = await res.json();
+
+                    if (!info.isEmpty) {
+                        // Show type-to-confirm modal for non-empty folders
+                        pendingDeletePath = path;
+                        pendingDeleteName = info.name;
+                        document.getElementById('delete-folder-name').textContent = info.name;
+                        document.getElementById('delete-item-count').textContent = info.itemCount;
+                        document.getElementById('delete-confirm-input').value = '';
+                        document.getElementById('btn-delete-confirm').disabled = true;
+                        document.getElementById('delete-confirm-modal').classList.add('show');
+                        document.getElementById('delete-confirm-input').focus();
+                        return;
+                    }
+                } catch (e) {
+                    showMessage('Failed to get folder info', 'error');
+                    return;
+                }
+            }
+
+            // Simple confirmation for files and empty folders
             const typeLabel = type === 'folder' ? 'folder' : 'file';
             if (!confirm(`Delete this ${typeLabel}?`)) return;
 
+            await performDelete(path, false);
+        }
+
+        async function performDelete(path, recursive) {
             try {
-                const res = await fetch(`/api/files?path=${encodeURIComponent(path)}`, {
-                    method: 'DELETE'
-                });
+                const url = `/api/files?path=${encodeURIComponent(path)}${recursive ? '&recursive=true' : ''}`;
+                const res = await fetch(url, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.success) {
-                    showMessage(`Deleted successfully`, 'success');
+                    showMessage('Deleted successfully', 'success');
                 } else {
-                    showMessage(data.detail || `Failed to delete`, 'error');
+                    showMessage(data.detail || 'Failed to delete', 'error');
                 }
             } catch (e) {
-                const err = await e.response?.json?.() || {};
-                showMessage(err.detail || `Failed to delete`, 'error');
+                showMessage('Failed to delete', 'error');
             }
             refreshFiles();
         }
+
+        function hideDeleteConfirmModal() {
+            document.getElementById('delete-confirm-modal').classList.remove('show');
+            pendingDeletePath = null;
+            pendingDeleteName = null;
+        }
+
+        async function confirmRecursiveDelete() {
+            if (pendingDeletePath) {
+                hideDeleteConfirmModal();
+                await performDelete(pendingDeletePath, true);
+            }
+        }
+
+        // Validate delete confirmation input
+        document.getElementById('delete-confirm-input').addEventListener('input', (e) => {
+            const matches = e.target.value === pendingDeleteName;
+            document.getElementById('btn-delete-confirm').disabled = !matches;
+        });
+
+        document.getElementById('delete-confirm-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideDeleteConfirmModal();
+            if (e.key === 'Enter' && e.target.value === pendingDeleteName) {
+                confirmRecursiveDelete();
+            }
+        });
+
+        // Editor state
+        let currentEditPath = null;
+
+        async function editFile(path) {
+            try {
+                const res = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    showMessage(err.detail || 'Failed to load file', 'error');
+                    return;
+                }
+                const data = await res.json();
+                currentEditPath = path;
+                const filename = path.split('/').pop();
+                document.getElementById('editor-filename').textContent = `Edit: ${filename}`;
+                document.getElementById('editor-content').value = data.content;
+                document.getElementById('editor-modal').classList.add('show');
+                document.getElementById('editor-content').focus();
+            } catch (e) {
+                showMessage('Failed to load file', 'error');
+            }
+        }
+
+        function hideEditorModal() {
+            document.getElementById('editor-modal').classList.remove('show');
+            currentEditPath = null;
+        }
+
+        async function saveFile() {
+            if (!currentEditPath) return;
+
+            const content = document.getElementById('editor-content').value;
+            try {
+                const res = await fetch(`/api/files/content?path=${encodeURIComponent(currentEditPath)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showMessage('File saved successfully', 'success');
+                    hideEditorModal();
+                    refreshFiles();
+                } else {
+                    showMessage(data.detail || 'Failed to save file', 'error');
+                }
+            } catch (e) {
+                showMessage('Failed to save file', 'error');
+            }
+        }
+
+        // Editor keyboard shortcuts
+        document.getElementById('editor-content').addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                hideEditorModal();
+            }
+            if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                saveFile();
+            }
+            // Allow Tab to insert actual tab character
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + 2;
+            }
+        });
 
         // New folder modal
         function showNewFolderModal() {
@@ -456,9 +659,15 @@
             uploadFiles(e.dataTransfer.files);
         });
 
-        // Close modal on background click
+        // Close modals on background click
         document.getElementById('new-folder-modal').addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) hideNewFolderModal();
+        });
+        document.getElementById('delete-confirm-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) hideDeleteConfirmModal();
+        });
+        document.getElementById('editor-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) hideEditorModal();
         });
 
         // Initial load

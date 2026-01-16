@@ -1,6 +1,7 @@
 """Minecraft Plugin Manager - Web UI for managing plugins and server."""
 
 import os
+import shutil
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -204,8 +205,8 @@ async def create_folder(name: str, path: str = ""):
 
 
 @app.delete("/api/files")
-async def delete_item(path: str):
-    """Delete a file or empty folder."""
+async def delete_item(path: str, recursive: bool = False):
+    """Delete a file or folder. Use recursive=true for non-empty folders."""
     if not path:
         raise HTTPException(status_code=400, detail="Path required")
 
@@ -222,13 +223,109 @@ async def delete_item(path: str):
         if target.is_file():
             target.unlink()
         elif target.is_dir():
-            # Only delete empty directories for safety
             if any(target.iterdir()):
-                raise HTTPException(status_code=400, detail="Folder is not empty")
-            target.rmdir()
+                # Folder is not empty
+                if recursive:
+                    shutil.rmtree(target)
+                else:
+                    raise HTTPException(status_code=400, detail="Folder is not empty")
+            else:
+                target.rmdir()
         return {"success": True, "deleted": path}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/files/info")
+async def get_file_info(path: str):
+    """Get info about a file or folder (used for delete confirmation)."""
+    if not path:
+        raise HTTPException(status_code=400, detail="Path required")
+
+    target = safe_path(path)
+
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if target.is_file():
+        return {"type": "file", "name": target.name}
+
+    # Count items recursively for folders
+    item_count = sum(1 for _ in target.rglob("*"))
+    return {
+        "type": "folder",
+        "name": target.name,
+        "isEmpty": item_count == 0,
+        "itemCount": item_count
+    }
+
+
+# Editable file extensions (config files common in Minecraft servers)
+EDITABLE_EXTENSIONS = {'.yml', '.yaml', '.json', '.properties', '.txt', '.cfg', '.conf', '.toml'}
+
+
+@app.get("/api/files/content")
+async def get_file_content(path: str):
+    """Read content of a text file for editing."""
+    if not path:
+        raise HTTPException(status_code=400, detail="Path required")
+
+    target = safe_path(path)
+
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    # Check extension
+    if target.suffix.lower() not in EDITABLE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="File type not editable")
+
+    try:
+        # Read first 8KB to check for binary content
+        with open(target, 'rb') as f:
+            chunk = f.read(8192)
+            if b'\x00' in chunk:
+                raise HTTPException(status_code=400, detail="File appears to be binary")
+
+        # Read full file as text
+        content = target.read_text(encoding='utf-8')
+        return {"content": content, "path": path}
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File is not valid UTF-8 text")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/files/content")
+async def save_file_content(path: str, data: dict):
+    """Save content to a text file."""
+    if not path:
+        raise HTTPException(status_code=400, detail="Path required")
+
+    if "content" not in data:
+        raise HTTPException(status_code=400, detail="Content required")
+
+    target = safe_path(path)
+
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not target.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    # Check extension
+    if target.suffix.lower() not in EDITABLE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="File type not editable")
+
+    try:
+        target.write_text(data["content"], encoding='utf-8')
+        return {"success": True, "path": path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
