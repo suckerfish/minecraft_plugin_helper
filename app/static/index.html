@@ -293,6 +293,11 @@
             return div.innerHTML;
         }
 
+        function escapeJs(text) {
+            // Escape for use in JavaScript string literals inside HTML attributes
+            return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
         // Editable file extensions
         const EDITABLE_EXTENSIONS = ['.yml', '.yaml', '.json', '.properties', '.txt', '.cfg', '.conf', '.toml'];
 
@@ -391,7 +396,7 @@
                 const bc = document.getElementById('breadcrumbs');
                 let bcHtml = '<a onclick="navigate(\'\')">Root</a>';
                 for (const crumb of data.breadcrumbs) {
-                    bcHtml += ` <span>/</span> <a onclick="navigate('${escapeHtml(crumb.path)}')">${escapeHtml(crumb.name)}</a>`;
+                    bcHtml += ` <span>/</span> <a onclick="navigate('${escapeJs(crumb.path)}')">${escapeHtml(crumb.name)}</a>`;
                 }
                 bc.innerHTML = bcHtml;
 
@@ -408,12 +413,12 @@
                     const isFolder = item.type === 'folder';
                     const canEdit = !isFolder && isEditable(item.name);
                     return `
-                        <div class="file-item ${isFolder ? 'folder' : ''}" ${isFolder ? `onclick="navigate('${escapeHtml(itemPath)}')"` : ''}>
+                        <div class="file-item ${isFolder ? 'folder' : ''}" ${isFolder ? `onclick="navigate('${escapeJs(itemPath)}')"` : ''}>
                             <span class="file-icon">${isFolder ? '&#128193;' : '&#128196;'}</span>
                             <span class="file-name">${escapeHtml(item.name)}</span>
                             <span class="file-size">${formatSize(item.size)}</span>
-                            ${canEdit ? `<button class="btn-edit" onclick="event.stopPropagation(); editFile('${escapeHtml(itemPath)}')">Edit</button>` : ''}
-                            <button class="btn-delete" onclick="event.stopPropagation(); deleteItem('${escapeHtml(itemPath)}', '${item.type}')">Delete</button>
+                            ${canEdit ? `<button class="btn-edit" onclick="event.stopPropagation(); editFile('${escapeJs(itemPath)}')">Edit</button>` : ''}
+                            <button class="btn-delete" onclick="event.stopPropagation(); deleteItem('${escapeJs(itemPath)}', '${item.type}')">Delete</button>
                         </div>
                     `;
                 }).join('');
@@ -508,8 +513,9 @@
 
         async function confirmRecursiveDelete() {
             if (pendingDeletePath) {
+                const pathToDelete = pendingDeletePath;
                 hideDeleteConfirmModal();
-                await performDelete(pendingDeletePath, true);
+                await performDelete(pathToDelete, true);
             }
         }
 
